@@ -6,7 +6,15 @@ use CGI::Util qw(escape);
 my @keep=qw(CDS rRNA tRNA ncRNA misc_RNA);
 my @name=qw(gene locus_tag systematic_id);
 my @product=qw(product note);
-die "Usage: $0 file.gbk > file.gtf\n" if not $ARGV[0] or not -s $ARGV[0];
+die <<"END"
+Converts Genbank files to GTF format (annotation only).
+Usage: $0 file.gbk > file.gtf
+
+The GTF includes the features: @keep
+Gene names are extracted from the tags: @name
+Notes are extracted from the tags: @product
+END
+if not $ARGV[0] or not -s $ARGV[0];
 my $io=Bio::SeqIO->new(-file=>$ARGV[0], -format=>'genbank');
 my %name;
 my %gene;
