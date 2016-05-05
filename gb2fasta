@@ -1,0 +1,101 @@
+#!/usr/bin/perl 
+use warnings;
+use strict;
+use Bio::SeqIO;
+use Bio::Seq::SeqFactory;
+use Getopt::Long;
+my $revcom=0;
+my $mugsy=0;
+my $inform='genbank';
+my $outform='fasta';
+my $prefix;
+my $translate=0;
+my @region;
+GetOptions('comp|revcom!'=>\$revcom, 
+           'mugsy!'=>\$mugsy, 
+           'informat=s'=>\$inform, 
+           'outformat=s'=>\$outform,
+           'prefix=s'=>\$prefix,
+           'translate!'=>\$translate,
+           'region=s@'=>\@region
+          );
+die <<"END"
+Usage: $0 seq1.gbk seq2.gbk > seqs.fa
+
+Options:
+--informat genbank Any Bioperl-recognised format (default genbank). All input
+                   files must be in the same format.
+--outformat fasta  Any Bioperl-recognised format (default fasta)
+--comp             Reverse-complement all output sequences
+--revcom           Synonym for --comp
+--mugsy            Replace characters which Mugsy doesn't like in the 
+                   description lines
+--prefix MyPrefix  Add the specified prefix to the IDs of all sequences in the
+                   output file.
+--region seq:1-10  Include only the specified region(s) in the output. Regions
+                   are specified in the form identifier:start-end. Multiple
+                   regions can be comma separated, or included by using
+                   multiple --region flags.
+The start/end of the sequence is
+                   used if no start or end coordinate is supplied.
+--translate        Translate to protein sequence before output (assumes that
+                   the sequence is in frame). Translation is only valid with
+                   some Bioperl output formats (e.g. Fasta).
+END
+if not @ARGV;
+my $type='Bio::Seq';
+$type='Bio::PrimarySeq' if $outform eq 'fasta';
+my $fac=Bio::Seq::SeqFactory->new(-type=>$type);
+my $out=Bio::SeqIO->new(-format=>$outform);
+@region=split /,/, join(',',@region);
+my %region;
+for my $r (@region) {
+    my($accession, $start, $end, $coord);
+    ($accession, $coord)=split /:/, $r;  
+    ($start, $end)=split /-/, $coord if defined $coord;
+    $region{$accession}=[];
+    push @{$region{$accession}}, defined $start ? $start : 1;
+    push @{$region{$accession}}, defined $end ? $end : 'end';
+}
+for (@ARGV) {
+    my $in=Bio::SeqIO->new(-file=>$_, -format=>$inform, -seqfactory=>$fac);  
+    while (my $seq=$in->next_seq) {
+        my @newseq;
+        if (exists $region{$seq->id}) {
+            while (my($start,$end)=splice @{$region{$seq->id}}, 0, 2) {
+                $end=$seq->length if $end eq 'end';
+                die "Error, start coordinate must be a positive integer for ",$seq->id if defined $start and not $start>1 and not $start==int $start;
+                die "Error, start coordinate must be a positive integer for ",$seq->id if defined $start and not $start>1 and not $start==int $start;
+                die "Error, end must be after start for ",$seq->id if defined $start and defined $end and not $end>=$start;
+                my $newseq;
+                if ((defined $start and $start>=1) or (defined $end and $end<=$seq->length)) {
+                    $start=1 if not defined $start;
+                    $end=$seq->length if not defined $end;
+                    if ($type eq 'Bio::Seq') {
+                        $newseq=Bio::SeqUtils->trunc_with_features($seq, $start, $end);
+                    } else {
+                        $newseq=$seq->trunc($start, $end);
+                    }
+                    $newseq->display_id($newseq->display_id."_$start-$end");
+                }
+                push @newseq, $newseq;
+            }
+        }
+        push @newseq, $seq if not @newseq;
+        for my $s (@newseq) {
+            if ($mugsy) {
+                my $desc=$seq->desc;
+                $desc=~s/[-:]/_/g;
+                $s->desc($desc);
+            }
+            if (defined $prefix) {
+                $s->id($prefix.$seq->id);
+            }
+            if ($revcom) {
+                $s=$type eq 'Bio::Seq' ? Bio::SeqUtils->revcom_with_features($s) : $s->revcom;
+            }
+            $s=$s->translate if $translate;
+            $out->write_seq($s);
+        }
+    }
+}

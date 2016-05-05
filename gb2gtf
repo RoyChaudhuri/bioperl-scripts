@@ -1,0 +1,47 @@
+#!/usr/bin/perl
+use warnings FATAL=>qw(all);
+use strict;
+use Bio::SeqIO;
+use CGI::Util qw(escape);
+my @keep=qw(CDS rRNA tRNA ncRNA misc_RNA);
+my @name=qw(gene locus_tag systematic_id);
+my @product=qw(product note);
+die "Usage: $0 file.gbk > file.gtf\n" if not $ARGV[0] or not -s $ARGV[0];
+my $io=Bio::SeqIO->new(-file=>$ARGV[0], -format=>'genbank');
+my %name;
+my %gene;
+while (my $seq=$io->next_seq) {        
+    for my $feat ($seq->get_SeqFeatures) {
+        if ($feat->primary_tag eq 'gene') { # Save names from gene features
+            ($gene{$feat->location->to_FTstring})=$feat->get_tagset_values(@name);
+        }
+        next if not grep $_ eq $feat->primary_tag, @keep;            
+        my($product)=$feat->get_tagset_values(@product);
+        my($id)=$feat->get_tagset_values(@name);
+        $id=$gene{$feat->location->to_FTstring} if exists $gene{$feat->location->to_FTstring} and not defined $id;
+        $id=$1 if not defined $id and defined $product and $product=~/^(tRNA\S+)/;
+        $id=$feat->primary_tag if not defined $id;
+        push @{$name{$id}}, '';
+        $id.='_'.@{$name{$id}} if @{$name{$id}}>1;
+        $id=escape($id);
+        $product=escape($product) if $product;
+        #            say STDERR $_ for $seq, $feat, $id, $product;
+        my $note="";
+        $note=qq(; note "$product") if defined $product;
+        my $strand='+';
+        $strand='.' if $feat->strand==0;
+        $strand='-' if $feat->strand==-1;
+        print join("\t",
+                   $seq->display_id,
+                   'GenBank',
+                   $feat->primary_tag,
+                   $feat->start,
+                   $feat->end,
+                   '.',
+                   $strand,
+                   '.',
+                   qq(gene_id "$id"; transcript_id "$id"$note)
+                  ), "\n";
+    }
+}
+
