@@ -20,7 +20,7 @@ GetOptions('format=s'=>\$format,
            'out=s'=>\$outtree,
            'rep=i'=>\$rep) or die 'Died';
 die <<"END" if not $ARGV[0];
-Makes a bootstrapped neighbor joining tree from an alignment
+Makes a bootstrapped distance tree from an alignment
 
 Usage: $0 --format clustalw --out newick --rep 100 in.aln > out.ph
 
@@ -41,6 +41,7 @@ Usage: $0 --format clustalw --out newick --rep 100 in.aln > out.ph
        ·  Tamura [t92|tamura|tamura92]
        ·  F84 [f84|felsenstein84]
        ·  TajimaNei [tajimanei|tajima-nei]
+
 --rep    Number of bootstrap replicates, default 100
 END
 ;
@@ -56,6 +57,5 @@ if (lc $model eq 'protein') {
 my @matrix=map {$stats->distance(-align=>$_, -method=>$model)} @$bootstrap;
 my @tree=map {$tfactory->make_tree($_)} @matrix;
 my $guide=$tfactory->make_tree($stats->distance(-align=>$aln, -method=>$model));
-my $err=Bio::TreeIO->new(-format=>'newick', -fh=>\*STDERR);
 my $tree=Bio::Tree::Statistics->assess_bootstrap(\@tree, $guide);
 $out->write_tree($tree);
