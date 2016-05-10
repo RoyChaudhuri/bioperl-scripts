@@ -1,0 +1,61 @@
+#!/usr/bin/perl
+use warnings FATAL=>qw(all);
+use strict;
+use Bio::AlignIO;
+use Bio::Align::Utilities qw(bootstrap_replicates);
+use Bio::Align::DNAStatistics;
+use Bio::Align::ProteinStatistics;
+use Bio::Tree::DistanceFactory;
+use Bio::Tree::Statistics;
+use Bio::TreeIO;
+use Getopt::Long;
+my $rep=100;
+my $format='clustalw';
+my $outtree='newick';
+my $model='protein';
+my $method='NJ';
+GetOptions('format=s'=>\$format,
+           'model=s'=>\$model,
+           'method=s'=>\$method,
+           'out=s'=>\$outtree,
+           'rep=i'=>\$rep) or die 'Died';
+die <<"END" if not $ARGV[0];
+Makes a bootstrapped neighbor joining tree from an alignment
+
+Usage: $0 --format clustalw --out newick --rep 100 in.aln > out.ph
+
+--format Format of input alignment (AlignIO), default clustalw
+
+--out    Format of output tree (TreeIO), default newick
+
+--method Method used to make trees (UPGMA or NJ), default NJ
+
+--model  Model used for distances. Specify "protein" to use
+         the D_Kimura method from Bio::Align::ProteinStatistics,
+         otherwise a DNA distance model can be specified from
+         the following:
+       ·  JukesCantor [jc|jukes|jukescantor|jukes-cantor]
+       ·  Uncorrected [jcuncor|uncorrected]
+       ·  F81 [f81|felsenstein]
+       ·  Kimura [k2|k2p|k80|kimura]
+       ·  Tamura [t92|tamura|tamura92]
+       ·  F84 [f84|felsenstein84]
+       ·  TajimaNei [tajimanei|tajima-nei]
+--rep    Number of bootstrap replicates, default 100
+END
+;
+my $aln=Bio::AlignIO->new(-file=>$ARGV[0], -format=>$format)->next_aln;
+my $out=Bio::TreeIO->new(-format=>$outtree, -internal_node_id=>'bootstrap');
+my $bootstrap=bootstrap_replicates($aln, $rep);
+my $tfactory=Bio::Tree::DistanceFactory->new(-method=>$method);
+my $stats=Bio::Align::DNAStatistics->new;
+if (lc $model eq 'protein') {
+    $stats=Bio::Align::ProteinStatistics->new;
+    $model='Kimura'
+}
+my @matrix=map {$stats->distance(-align=>$_, -method=>$model)} @$bootstrap;
+my @tree=map {$tfactory->make_tree($_)} @matrix;
+my $guide=$tfactory->make_tree($stats->distance(-align=>$aln, -method=>$model));
+my $err=Bio::TreeIO->new(-format=>'newick', -fh=>\*STDERR);
+my $tree=Bio::Tree::Statistics->assess_bootstrap(\@tree, $guide);
+$out->write_tree($tree);
